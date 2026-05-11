@@ -64,7 +64,7 @@ def _reranker():
     """Lazy-load the cross-encoder. ~80MB, runs on CPU."""
     from sentence_transformers import CrossEncoder
 
-    model_name = os.environ.get("RERANKER_MODEL", "BAAI/bge-reranker-base")
+    model_name = os.environ.get("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
     return CrossEncoder(model_name)
 
 

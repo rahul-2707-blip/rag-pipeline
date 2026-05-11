@@ -20,6 +20,19 @@ from rag.store import list_documents
 
 st.set_page_config(page_title="RAG Pipeline", layout="wide")
 st.title("RAG Pipeline · Hybrid Retrieval Demo")
+
+
+@st.cache_resource(show_spinner="Warming up models (first run can take a few minutes on CPU)…")
+def _warmup():
+    from rag.embed import embed_text
+    from rag.retrieve import _reranker
+
+    embed_text("warmup")
+    _reranker().predict([("warmup query", "warmup passage")])
+    return True
+
+
+_warmup()
 st.caption(
     "Ask questions of the FastAPI documentation. Retrieval combines dense embeddings "
     "(BGE-small) with BM25 keyword search via Reciprocal Rank Fusion, then reranks "
