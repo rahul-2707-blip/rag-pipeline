@@ -24,19 +24,24 @@ from .embed import DEFAULT_MODEL, embedding_dim
 DUPLICATE_THRESHOLD = 0.95
 
 
-def _connect() -> psycopg.Connection:
+def _connect(register: bool = True) -> psycopg.Connection:
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL is not set")
     conn = psycopg.connect(url, autocommit=False)
-    register_vector(conn)
+    if register:
+        register_vector(conn)
     return conn
 
 
 def init_schema() -> None:
     dim = embedding_dim()
-    with _connect() as conn, conn.cursor() as cur:
+    # First create the extension on a raw connection (vector type doesn't exist yet)
+    with _connect(register=False) as conn, conn.cursor() as cur:
         cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        conn.commit()
+    # Now safe to register and create the rest of the schema
+    with _connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS documents (
