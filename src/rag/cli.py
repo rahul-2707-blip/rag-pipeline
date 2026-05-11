@@ -69,9 +69,10 @@ def ask(question: str, strategy: str, mode: str, no_rerank: bool, no_verify: boo
 
 @cli.command(name="eval")
 @click.option("--strategy", default="recursive")
-def eval_cmd(strategy: str):
+@click.option("--no-verify", is_flag=True, help="Skip citation verification to save tokens (loses citation-accuracy metric)")
+def eval_cmd(strategy: str, no_verify: bool):
     """Run the eval suite against one strategy."""
-    report = evaluate_strategy(strategy)
+    report = evaluate_strategy(strategy, verify=not no_verify)
     t = Table(title=f"Eval — strategy={strategy}", show_header=True, header_style="bold")
     t.add_column("Metric"); t.add_column("Score", justify="right")
     t.add_row("Cases", str(report.n_cases))

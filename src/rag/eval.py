@@ -20,6 +20,7 @@ from typing import Optional
 from groq import Groq
 
 from .ask import AnswerBundle, ask
+from .rate_limit import rate_limited
 from .retrieve import RetrievalConfig
 
 
@@ -79,6 +80,16 @@ For "no-answer" type questions, a refusal that doesn't fabricate facts scores 5.
 Respond ONLY with JSON: {"score": 1-5, "reason": "<one sentence>"}"""
 
 
+@rate_limited
+def _grade_call(messages: list) -> object:
+    return _judge_client().chat.completions.create(
+        model=_JUDGE_MODEL,
+        temperature=0,
+        response_format={"type": "json_object"},
+        messages=messages,
+    )
+
+
 def _grade_correctness(question: str, ideal: str, candidate: str, case_type: str) -> int:
     try:
         prompt = (
@@ -87,15 +98,10 @@ def _grade_correctness(question: str, ideal: str, candidate: str, case_type: str
             f"Candidate answer: {candidate}\n\n"
             f"Question type: {case_type}"
         )
-        resp = _judge_client().chat.completions.create(
-            model=_JUDGE_MODEL,
-            temperature=0,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": CORRECTNESS_SYSTEM},
-                {"role": "user", "content": prompt},
-            ],
-        )
+        resp = _grade_call([
+            {"role": "system", "content": CORRECTNESS_SYSTEM},
+            {"role": "user", "content": prompt},
+        ])
         data = json.loads(resp.choices[0].message.content or "{}")
         return max(1, min(5, int(data.get("score", 0)))) or 0
     except Exception:
@@ -129,8 +135,8 @@ def _citation_accuracy(bundle: AnswerBundle) -> float:
     return supported / len(bundle.citation_verdicts)
 
 
-def evaluate_case(case: EvalCase, config: RetrievalConfig) -> CaseScore:
-    bundle = ask(case.question, config=config, verify=True)
+def evaluate_case(case: EvalCase, config: RetrievalConfig, verify: bool = True) -> CaseScore:
+    bundle = ask(case.question, config=config, verify=verify)
     correctness = _grade_correctness(case.question, case.ideal_answer, bundle.answer, case.type)
     faithfulness = _faithfulness(bundle)
     relevance = _retrieval_relevance(case, bundle)
@@ -146,10 +152,10 @@ def evaluate_case(case: EvalCase, config: RetrievalConfig) -> CaseScore:
     )
 
 
-def evaluate_strategy(strategy: str, dataset: str = "qa_pairs") -> StrategyReport:
+def evaluate_strategy(strategy: str, dataset: str = "qa_pairs", verify: bool = True) -> StrategyReport:
     cases = load_cases(dataset)
     config = RetrievalConfig(strategy=strategy)
-    scores = [evaluate_case(c, config) for c in cases]
+    scores = [evaluate_case(c, config, verify=verify) for c in cases]
     n = len(scores) or 1
     return StrategyReport(
         strategy=strategy,

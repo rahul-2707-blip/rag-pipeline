@@ -16,6 +16,7 @@ from typing import Optional
 
 from groq import Groq
 
+from .rate_limit import rate_limited
 from .retrieve import RetrievedChunk
 
 
@@ -61,18 +62,23 @@ def _format_context(chunks: list[RetrievedChunk]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
+@rate_limited
+def _generate_call(messages: list) -> object:
+    return _client().chat.completions.create(
+        model=LLM_MODEL,
+        temperature=0.1,
+        messages=messages,
+    )
+
+
 def generate(question: str, chunks: list[RetrievedChunk]) -> Generation:
     context = _format_context(chunks)
     user_msg = f"Context:\n{context}\n\nQuestion: {question}\n\nAnswer with citations:"
 
-    response = _client().chat.completions.create(
-        model=LLM_MODEL,
-        temperature=0.1,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_msg},
-        ],
-    )
+    response = _generate_call([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_msg},
+    ])
     answer = response.choices[0].message.content or ""
 
     # Parse citation numbers actually used
@@ -113,22 +119,27 @@ class CitationVerdict:
     reason: str
 
 
+@rate_limited
+def _verify_call(messages: list) -> object:
+    return _client().chat.completions.create(
+        model=LLM_MODEL,
+        temperature=0,
+        response_format={"type": "json_object"},
+        messages=messages,
+    )
+
+
 def _verify_one(sentence: str, n: int, chunk) -> CitationVerdict:
     try:
-        response = _client().chat.completions.create(
-            model=LLM_MODEL,
-            temperature=0,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": VERIFY_SYSTEM},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Claim: {sentence}\n\nSource passage:\n{chunk.text}\n\nVerify now."
-                    ),
-                },
-            ],
-        )
+        response = _verify_call([
+            {"role": "system", "content": VERIFY_SYSTEM},
+            {
+                "role": "user",
+                "content": (
+                    f"Claim: {sentence}\n\nSource passage:\n{chunk.text}\n\nVerify now."
+                ),
+            },
+        ])
         data = json.loads(response.choices[0].message.content or "{}")
         return CitationVerdict(
             sentence=sentence,
