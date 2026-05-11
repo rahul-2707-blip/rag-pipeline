@@ -33,6 +33,8 @@ with st.sidebar:
     mode = st.radio("Retrieval mode", ["hybrid", "dense", "sparse"], index=0,
                     help="Toggle to compare hybrid vs. dense-only vs. sparse-only.")
     use_rerank = st.checkbox("Use cross-encoder reranker", value=True)
+    verify = st.checkbox("Verify citations (slower)", value=True,
+                         help="Disable for ~3x faster responses; loses the citation audit display.")
     final_k = st.slider("Final chunks (k)", min_value=1, max_value=10, value=5)
     st.divider()
     if st.button("Refresh document list"):
@@ -66,7 +68,7 @@ if ask_btn and question:
         final_k=final_k,
     )
     with st.spinner("Retrieving and generating…"):
-        bundle = ask_question(question, config=config, verify=True)
+        bundle = ask_question(question, config=config, verify=verify)
 
     # Confidence chips
     c1, c2, c3, c4 = st.columns(4)

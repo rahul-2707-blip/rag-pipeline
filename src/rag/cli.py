@@ -41,10 +41,11 @@ def ingest_cmd(root: str, strategy: str, reset: bool, no_dedup: bool):
               type=click.Choice(["fixed", "recursive", "semantic"]))
 @click.option("--mode", default="hybrid", type=click.Choice(["hybrid", "dense", "sparse"]))
 @click.option("--no-rerank", is_flag=True)
-def ask(question: str, strategy: str, mode: str, no_rerank: bool):
+@click.option("--no-verify", is_flag=True, help="Skip citation verification (faster for demos)")
+def ask(question: str, strategy: str, mode: str, no_rerank: bool, no_verify: bool):
     """Ask a question against the indexed corpus."""
     config = RetrievalConfig(strategy=strategy, mode=mode, use_rerank=not no_rerank)
-    bundle = ask_question(question, config=config)
+    bundle = ask_question(question, config=config, verify=not no_verify)
 
     console.print(f"\n[bold cyan]Question:[/] {question}")
     console.print(f"[bold cyan]Mode:[/] {mode} · strategy: {strategy} · rerank: {not no_rerank}")

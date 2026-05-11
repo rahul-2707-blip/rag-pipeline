@@ -113,42 +113,52 @@ class CitationVerdict:
     reason: str
 
 
+def _verify_one(sentence: str, n: int, chunk) -> CitationVerdict:
+    try:
+        response = _client().chat.completions.create(
+            model=LLM_MODEL,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": VERIFY_SYSTEM},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Claim: {sentence}\n\nSource passage:\n{chunk.text}\n\nVerify now."
+                    ),
+                },
+            ],
+        )
+        data = json.loads(response.choices[0].message.content or "{}")
+        return CitationVerdict(
+            sentence=sentence,
+            citation_num=n,
+            supported=bool(data.get("supported", False)),
+            reason=str(data.get("reason", "")),
+        )
+    except Exception as e:
+        return CitationVerdict(
+            sentence=sentence,
+            citation_num=n,
+            supported=False,
+            reason=f"verification error: {e}",
+        )
+
+
 def verify_citations(generation: Generation) -> list[CitationVerdict]:
-    """For every sentence-with-citation, check that the cited chunk supports the claim."""
+    """Verify each cited claim against its source chunk. Parallelized across calls."""
+    from concurrent.futures import ThreadPoolExecutor
+
     chunk_by_num = {i + 1: c for i, c in enumerate(generation.used_chunks)}
-    verdicts: list[CitationVerdict] = []
+    tasks: list[tuple[str, int, object]] = []
     for sentence, cites in _extract_claims_and_citations(generation.answer):
         for n in cites:
             chunk = chunk_by_num.get(n)
-            if not chunk:
-                continue
-            try:
-                response = _client().chat.completions.create(
-                    model=LLM_MODEL,
-                    temperature=0,
-                    response_format={"type": "json_object"},
-                    messages=[
-                        {"role": "system", "content": VERIFY_SYSTEM},
-                        {
-                            "role": "user",
-                            "content": (
-                                f"Claim: {sentence}\n\nSource passage:\n{chunk.text}\n\nVerify now."
-                            ),
-                        },
-                    ],
-                )
-                data = json.loads(response.choices[0].message.content or "{}")
-                verdicts.append(CitationVerdict(
-                    sentence=sentence,
-                    citation_num=n,
-                    supported=bool(data.get("supported", False)),
-                    reason=str(data.get("reason", "")),
-                ))
-            except Exception as e:
-                verdicts.append(CitationVerdict(
-                    sentence=sentence,
-                    citation_num=n,
-                    supported=False,
-                    reason=f"verification error: {e}",
-                ))
+            if chunk:
+                tasks.append((sentence, n, chunk))
+
+    if not tasks:
+        return []
+    with ThreadPoolExecutor(max_workers=min(5, len(tasks))) as pool:
+        verdicts = list(pool.map(lambda t: _verify_one(*t), tasks))
     return verdicts
